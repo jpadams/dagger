@@ -27,10 +27,10 @@ async def test():
             .with_exec(["apt-get", "update"])
             .with_exec(["apt-get", "install", "-y", "libpq-dev", "gcc"])
             .with_exec(["pip", "install", "pytest", "psycopg2"])
-            .with_exec(["pytest"]) # execute pytest
+            .with_exec(["pytest", "--junitxml=/tmp/junit.xml"]) # execute pytest
         )
         # execute
-        results = await pytest.stdout()
+        results = await pytest.file("/tmp/junit.xml").contents()
 
     print(results)
 
