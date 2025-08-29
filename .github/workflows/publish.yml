@@ -19,13 +19,13 @@ on:
 jobs:
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
-    runs-on: dagger-g3-v0-18-14-16c-st
+    runs-on: dagger-g3-v0-18-16-16c-st
     steps:
       - uses: actions/checkout@v4
       - name: "Publish"
         uses: ./.github/actions/call
         with:
-          module: ./releaser
+          module: github.com/${{ github.repository }}/releaser@${{ github.sha }}
           function: |-
             publish \
             --tag="${{ github.ref_name }}" --commit="${{ github.sha }}" \
@@ -89,7 +89,7 @@ jobs:
   dagger-io-bump-dagger:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g3-v0-18-14-4c
+    runs-on: dagger-g3-v0-18-16-4c
     steps:
       # Configure credentials to clone dagger modules
       - uses: de-vri-es/setup-git-credentials@v2

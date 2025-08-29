@@ -155,6 +155,11 @@ class JSON(Scalar):
     """An arbitrary JSON-encoded value."""
 
 
+class JSONValueID(Scalar):
+    """The `JSONValueID` scalar type represents an identifier for an
+    object of type JSONValue."""
+
+
 class LLMID(Scalar):
     """The `LLMID` scalar type represents an identifier for an object of
     type LLM."""
@@ -515,6 +520,12 @@ class Binding(Type):
         _ctx = self._select("asGitRepository", _args)
         return GitRepository(_ctx)
 
+    def as_json_value(self) -> "JSONValue":
+        """Retrieve the binding value, as type JSONValue"""
+        _args: list[Arg] = []
+        _ctx = self._select("asJSONValue", _args)
+        return JSONValue(_ctx)
+
     def as_llm(self) -> "LLM":
         """Retrieve the binding value, as type LLM"""
         _args: list[Arg] = []
@@ -874,6 +885,9 @@ class Container(Type):
     ) -> Self:
         """Initializes this container from a Dockerfile build.
 
+        .. deprecated::
+            Use `Directory.build` instead
+
         Parameters
         ----------
         context:
@@ -900,6 +914,11 @@ class Container(Type):
             processes be the pid 1 process in the container. Otherwise it may
             result in unexpected behavior.
         """
+        warnings.warn(
+            'Method "build" is deprecated: Use `Directory.build` instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("context", context),
             Arg("dockerfile", dockerfile, "Dockerfile"),
@@ -910,6 +929,30 @@ class Container(Type):
         ]
         _ctx = self._select("build", _args)
         return Container(_ctx)
+
+    async def combined_output(self) -> str:
+        """The combined buffered standard output and standard error stream of the
+        last executed command
+
+        Returns an error if no command was executed
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("combinedOutput", _args)
+        return await _ctx.execute(str)
 
     async def default_args(self) -> list[str]:
         """Return the container's default arguments.
@@ -1869,6 +1912,7 @@ class Container(Type):
         *,
         use_entrypoint: bool | None = False,
         stdin: str | None = "",
+        redirect_stdin: str | None = "",
         redirect_stdout: str | None = "",
         redirect_stderr: str | None = "",
         expect: ReturnType | None = ReturnType.SUCCESS,
@@ -1895,11 +1939,15 @@ class Container(Type):
         stdin:
             Content to write to the command's standard input. Example: "Hello
             world")
+        redirect_stdin:
+            Redirect the command's standard input from a file in the
+            container. Example: "./stdin.txt"
         redirect_stdout:
             Redirect the command's standard output to a file in the container.
             Example: "./stdout.txt"
         redirect_stderr:
-            Like redirectStdout, but for standard error
+            Redirect the command's standard error to a file in the container.
+            Example: "./stderr.txt"
         expect:
             Exit codes this command is allowed to exit with without error
         experimental_privileged_nesting:
@@ -1924,6 +1972,7 @@ class Container(Type):
             Arg("args", args),
             Arg("useEntrypoint", use_entrypoint, False),
             Arg("stdin", stdin, ""),
+            Arg("redirectStdin", redirect_stdin, ""),
             Arg("redirectStdout", redirect_stdout, ""),
             Arg("redirectStderr", redirect_stderr, ""),
             Arg("expect", expect, ReturnType.SUCCESS),
@@ -4587,6 +4636,48 @@ class Env(Type):
         _ctx = self._select("withGitRepositoryOutput", _args)
         return Env(_ctx)
 
+    def with_json_value_input(
+        self,
+        name: str,
+        value: "JSONValue",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type JSONValue in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The JSONValue value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withJSONValueInput", _args)
+        return Env(_ctx)
+
+    def with_json_value_output(self, name: str, description: str) -> Self:
+        """Declare a desired JSONValue output to be assigned in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withJSONValueOutput", _args)
+        return Env(_ctx)
+
     def with_llm_input(
         self,
         name: str,
@@ -6122,6 +6213,20 @@ class GitRef(Type):
         _ctx = self._select("commit", _args)
         return await _ctx.execute(str)
 
+    def common_ancestor(self, other: Self) -> Self:
+        """Find the best common ancestor between this ref and another ref.
+
+        Parameters
+        ----------
+        other:
+            The other ref to compare against.
+        """
+        _args = [
+            Arg("other", other),
+        ]
+        _ctx = self._select("commonAncestor", _args)
+        return GitRef(_ctx)
+
     async def id(self) -> GitRefID:
         """A unique identifier for this GitRef.
 
@@ -6188,6 +6293,13 @@ class GitRef(Type):
         ]
         _ctx = self._select("tree", _args)
         return Directory(_ctx)
+
+    def with_(self, cb: Callable[["GitRef"], "GitRef"]) -> "GitRef":
+        """Call the provided callable with current GitRef.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -6410,6 +6522,20 @@ class GitRepository(Type):
 @typecheck
 class Host(Type):
     """Information about the host environment."""
+
+    def container_image(self, name: str) -> Container:
+        """Accesses a container image on the host.
+
+        Parameters
+        ----------
+        name:
+            Name of the image to access.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("containerImage", _args)
+        return Container(_ctx)
 
     def directory(
         self,
@@ -6758,6 +6884,249 @@ class InterfaceTypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("sourceModuleName", _args)
         return await _ctx.execute(str)
+
+
+@typecheck
+class JSONValue(Type):
+    async def as_array(self) -> list["JSONValue"]:
+        """Decode an array from json"""
+        _args: list[Arg] = []
+        _ctx = self._select("asArray", _args)
+        return await _ctx.execute_object_list(JSONValue)
+
+    async def as_boolean(self) -> bool:
+        """Decode a boolean from json
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asBoolean", _args)
+        return await _ctx.execute(bool)
+
+    async def as_integer(self) -> int:
+        """Decode an integer from json
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asInteger", _args)
+        return await _ctx.execute(int)
+
+    async def as_string(self) -> str:
+        """Decode a string from json
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asString", _args)
+        return await _ctx.execute(str)
+
+    async def contents(
+        self,
+        *,
+        pretty: bool | None = False,
+        indent: str | None = "  ",
+    ) -> JSON:
+        """Return the value encoded as json
+
+        Parameters
+        ----------
+        pretty:
+            Pretty-print
+        indent:
+            Optional line prefix
+
+        Returns
+        -------
+        JSON
+            An arbitrary JSON-encoded value.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("pretty", pretty, False),
+            Arg("indent", indent, "  "),
+        ]
+        _ctx = self._select("contents", _args)
+        return await _ctx.execute(JSON)
+
+    def field(self, path: list[str]) -> Self:
+        """Lookup the field at the given path, and return its value.
+
+        Parameters
+        ----------
+        path:
+            Path of the field to lookup, encoded as an array of field names
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("field", _args)
+        return JSONValue(_ctx)
+
+    async def fields(self) -> list[str]:
+        """List fields of the encoded object
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("fields", _args)
+        return await _ctx.execute(list[str])
+
+    async def id(self) -> JSONValueID:
+        """A unique identifier for this JSONValue.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        JSONValueID
+            The `JSONValueID` scalar type represents an identifier for an
+            object of type JSONValue.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(JSONValueID)
+
+    def new_boolean(self, value: bool) -> Self:
+        """Encode a boolean to json
+
+        Parameters
+        ----------
+        value:
+            New boolean value
+        """
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("newBoolean", _args)
+        return JSONValue(_ctx)
+
+    def new_integer(self, value: int) -> Self:
+        """Encode an integer to json
+
+        Parameters
+        ----------
+        value:
+            New integer value
+        """
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("newInteger", _args)
+        return JSONValue(_ctx)
+
+    def new_string(self, value: str) -> Self:
+        """Encode a string to json
+
+        Parameters
+        ----------
+        value:
+            New string value
+        """
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("newString", _args)
+        return JSONValue(_ctx)
+
+    def with_contents(self, contents: JSON) -> Self:
+        """Return a new json value, decoded from the given content
+
+        Parameters
+        ----------
+        contents:
+            New JSON-encoded contents
+        """
+        _args = [
+            Arg("contents", contents),
+        ]
+        _ctx = self._select("withContents", _args)
+        return JSONValue(_ctx)
+
+    def with_field(self, path: list[str], value: Self) -> Self:
+        """Set a new field at the given path
+
+        Parameters
+        ----------
+        path:
+            Path of the field to set, encoded as an array of field names
+        value:
+            The new value of the field
+        """
+        _args = [
+            Arg("path", path),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withField", _args)
+        return JSONValue(_ctx)
+
+    def with_(self, cb: Callable[["JSONValue"], "JSONValue"]) -> "JSONValue":
+        """Call the provided callable with current JSONValue.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck
@@ -8748,6 +9117,12 @@ class Client(Root):
         _ctx = self._select("http", _args)
         return File(_ctx)
 
+    def json(self) -> JSONValue:
+        """Initialize a JSON value"""
+        _args: list[Arg] = []
+        _ctx = self._select("json", _args)
+        return JSONValue(_ctx)
+
     def llm(
         self,
         *,
@@ -9006,6 +9381,14 @@ class Client(Root):
         ]
         _ctx = self._select("loadInterfaceTypeDefFromID", _args)
         return InterfaceTypeDef(_ctx)
+
+    def load_json_value_from_id(self, id: JSONValueID) -> JSONValue:
+        """Load a JSONValue from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadJSONValueFromID", _args)
+        return JSONValue(_ctx)
 
     def load_llm_from_id(self, id: LLMID) -> LLM:
         """Load a LLM from its ID."""
@@ -9662,6 +10045,29 @@ class Service(Type):
         ]
         return await self._ctx.execute_sync(self, "stop", _args)
 
+    async def sync(self) -> Self:
+        """Forces evaluation of the pipeline in the engine.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "sync", _args)
+
+    def __await__(self):
+        return self.sync().__await__()
+
+    def terminal(self, *, cmd: list[str] | None = None) -> Self:
+        _args = [
+            Arg("cmd", [] if cmd is None else cmd, []),
+        ]
+        _ctx = self._select("terminal", _args)
+        return Service(_ctx)
+
     async def up(
         self,
         *,
@@ -9862,6 +10268,28 @@ class SourceMap(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("module", _args)
+        return await _ctx.execute(str)
+
+    async def url(self) -> str:
+        """The URL to the file, if any. This can be used to link to the source
+        map in the browser.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("url", _args)
         return await _ctx.execute(str)
 
 
@@ -10327,6 +10755,8 @@ __all__ = [
     "InputTypeDefID",
     "InterfaceTypeDef",
     "InterfaceTypeDefID",
+    "JSONValue",
+    "JSONValueID",
     "LLMTokenUsage",
     "LLMTokenUsageID",
     "Label",

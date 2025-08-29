@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -150,10 +151,8 @@ func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition
 	return defs, nil
 }
 
-func NewContainer(platform Platform) (*Container, error) {
-	return &Container{
-		Platform: platform,
-	}, nil
+func NewContainer(platform Platform) *Container {
+	return &Container{Platform: platform}
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
@@ -199,6 +198,9 @@ func (container *Container) WithoutInputs() *Container {
 var _ dagql.OnReleaser = (*Container)(nil)
 
 func (container *Container) OnRelease(ctx context.Context) error {
+	if container == nil {
+		return nil
+	}
 	if container.FSResult != nil {
 		err := container.FSResult.Release(ctx)
 		if err != nil {
@@ -472,9 +474,6 @@ func (container *Container) Build(
 ) (*Container, error) {
 	container = container.Clone()
 
-	container.Services.Merge(dockerfileDir.Services)
-	container.Services.Merge(contextDir.Services)
-
 	secretNameToLLBID := make(map[string]string)
 	for _, secret := range secrets {
 		secretName, ok := secretStore.GetSecretName(secret.ID().Digest())
@@ -495,20 +494,10 @@ func (container *Container) Build(
 	if err != nil {
 		return nil, err
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-
-	detach, _, err := svcs.StartBindings(ctx, container.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
 
 	platform := container.Platform
 
@@ -667,8 +656,6 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 		container.FS = def.ToPB()
 	}
 
-	container.Services.Merge(dir.Services)
-
 	// set image ref to empty string
 	container.ImageRef = ""
 
@@ -755,13 +742,13 @@ func (container *Container) WithSymlink(ctx context.Context, srv *dagql.Server, 
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, dir *Directory, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, target, dir.LLB, dir.Result, dir.Dir, dir.Services, owner, readonly)
+	return container.withMounted(ctx, target, dir.LLB, dir.Result, dir.Dir, owner, readonly)
 }
 
 func (container *Container) WithMountedFile(ctx context.Context, target string, file *File, owner string, readonly bool) (*Container, error) {
 	container = container.Clone()
 
-	return container.withMounted(ctx, target, file.LLB, file.Result, file.File, file.Services, owner, readonly)
+	return container.withMounted(ctx, target, file.LLB, file.Result, file.File, owner, readonly)
 }
 
 var SeenCacheKeys = new(sync.Map)
@@ -987,10 +974,6 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 	if err != nil {
 		return nil, err
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
@@ -998,7 +981,7 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	info, err := dir.Stat(ctx, bk, svcs, ".")
+	info, err := dir.Stat(ctx, bk, ".")
 	if err != nil {
 		return nil, err
 	}
@@ -1083,7 +1066,6 @@ func (container *Container) withMounted(
 	srcDef *pb.Definition,
 	result bkcache.ImmutableRef,
 	srcPath string,
-	svcs ServiceBindings,
 	owner string,
 	readonly bool,
 ) (*Container, error) {
@@ -1105,8 +1087,6 @@ func (container *Container) withMounted(
 		Result:     result,
 	})
 
-	container.Services.Merge(svcs)
-
 	// set image ref to empty string
 	container.ImageRef = ""
 
@@ -1119,7 +1099,6 @@ func (container *Container) replaceMount(
 	srcDef *pb.Definition,
 	result bkcache.ImmutableRef,
 	srcPath string,
-	svcs ServiceBindings,
 	owner string,
 	readonly bool,
 ) (*Container, error) {
@@ -1143,8 +1122,6 @@ func (container *Container) replaceMount(
 	if err != nil {
 		return nil, err
 	}
-
-	container.Services.Merge(svcs)
 
 	// set image ref to empty string
 	container.ImageRef = ""
@@ -1265,7 +1242,7 @@ func (container *Container) writeToPath(ctx context.Context, subdir string, fn f
 		return container.WithRootFS(ctx, root)
 	}
 
-	return container.replaceMount(ctx, mount.Target, dir.LLB, dir.Result, mount.SourcePath, nil, "", false)
+	return container.replaceMount(ctx, mount.Target, dir.LLB, dir.Result, mount.SourcePath, "", false)
 }
 
 func (container *Container) runUnderPath(subdir string, fn func(dir *Directory) error) error {
@@ -1308,15 +1285,6 @@ func (container *Container) Evaluate(ctx context.Context) (*buildkit.Result, err
 	if err != nil {
 		return nil, err
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	detach, _, err := svcs.StartBindings(ctx, container.Services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
 
 	st, err := container.FSState()
 	if err != nil {
@@ -1405,7 +1373,6 @@ func (container *Container) Publish(
 	}
 
 	inputByPlatform := map[string]buildkit.ContainerExport{}
-	services := ServiceBindings{}
 
 	variants := append([]*Container{container}, platformVariants...)
 	for _, variant := range variants {
@@ -1444,8 +1411,6 @@ func (container *Container) Publish(
 				opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
 			}
 		}
-
-		services.Merge(variant.Services)
 	}
 	if len(inputByPlatform) == 0 {
 		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
@@ -1456,20 +1421,10 @@ func (container *Container) Publish(
 	if err != nil {
 		return "", err
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-
-	detach, _, err := svcs.StartBindings(ctx, services)
-	if err != nil {
-		return "", err
-	}
-	defer detach()
 
 	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, opts)
 	if err != nil {
@@ -1516,10 +1471,6 @@ func (container *Container) Export(
 	if err != nil {
 		return nil, err
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
@@ -1550,7 +1501,6 @@ func (container *Container) Export(
 	}
 
 	inputByPlatform := map[string]buildkit.ContainerExport{}
-	services := ServiceBindings{}
 
 	variants := append([]*Container{container}, opts.PlatformVariants...)
 	for _, variant := range variants {
@@ -1590,19 +1540,11 @@ func (container *Container) Export(
 				bkopts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
 			}
 		}
-
-		services.Merge(variant.Services)
 	}
 	if len(inputByPlatform) == 0 {
 		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
 		return nil, errors.New("no containers to export")
 	}
-
-	detach, _, err := svcs.StartBindings(ctx, services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
 
 	resp, err := bk.ExportContainerImage(ctx, inputByPlatform, opts.Dest, bkopts)
 	if err != nil {
@@ -1627,8 +1569,54 @@ func (container *Container) Export(
 
 func (container *Container) Import(
 	ctx context.Context,
-	source *File,
+	tarball io.Reader,
 	tag string,
+) (*Container, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	store := query.OCIStore()
+	lm := query.LeaseManager()
+
+	container = container.Clone()
+
+	var release func(context.Context) error
+	loadManifest := func(ctx context.Context) (*specs.Descriptor, error) {
+		// override outer ctx with release ctx and set release
+		ctx, release, err = leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
+		if err != nil {
+			return nil, err
+		}
+
+		stream := archive.NewImageImportStream(tarball, "")
+
+		desc, err := stream.Import(ctx, store)
+		if err != nil {
+			return nil, fmt.Errorf("image archive import: %w", err)
+		}
+
+		return resolveIndex(ctx, store, desc, container.Platform.Spec(), tag)
+	}
+	defer func() {
+		if release != nil {
+			release(ctx)
+		}
+	}()
+
+	manifestDesc, err := loadManifest(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("recover: %w", err)
+	}
+
+	return container.FromInternal(ctx, *manifestDesc)
+}
+
+// FromInternal creates a Container from an OCI image descriptor, loading the
+// image directly from the main worker OCI store.
+func (container *Container) FromInternal(
+	ctx context.Context,
+	desc specs.Descriptor,
 ) (*Container, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -1638,47 +1626,13 @@ func (container *Container) Import(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	store := query.OCIStore()
-	lm := query.LeaseManager()
-
-	container = container.Clone()
-
-	var release func(context.Context) error
-	loadManifest := func(ctx context.Context) (*specs.Descriptor, error) {
-		src, err := source.Open(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		defer src.Close()
-
-		// override outer ctx with release ctx and set release
-		ctx, release, err = leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
-		if err != nil {
-			return nil, err
-		}
-
-		stream := archive.NewImageImportStream(src, "")
-
-		desc, err := stream.Import(ctx, store)
-		if err != nil {
-			return nil, fmt.Errorf("image archive import: %w", err)
-		}
-
-		return resolveIndex(ctx, store, desc, container.Platform.Spec(), tag)
-	}
-
-	manifestDesc, err := loadManifest(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("recover: %w", err)
-	}
 
 	// NB: the repository portion of this ref doesn't actually matter, but it's
 	// pleasant to see something recognizable.
 	dummyRepo := "dagger/import"
 
 	st := llb.OCILayout(
-		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
+		fmt.Sprintf("%s@%s", dummyRepo, desc.Digest),
 		llb.OCIStore("", buildkit.OCIStoreName),
 		llb.Platform(container.Platform.Spec()),
 		buildkit.WithTracePropagation(ctx),
@@ -1689,45 +1643,36 @@ func (container *Container) Import(
 		return nil, fmt.Errorf("marshal root: %w", err)
 	}
 
+	container = container.Clone()
 	container.FS = execDef.ToPB()
 
-	if release != nil {
-		// eagerly evaluate the OCI reference so Buildkit sets up a long-term lease
-		_, err = bk.Solve(ctx, bkgw.SolveRequest{
-			Definition: container.FS,
-			Evaluate:   true,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("solve: %w", err)
-		}
-
-		if err := release(ctx); err != nil {
-			return nil, fmt.Errorf("release: %w", err)
-		}
+	// eagerly evaluate the OCI reference so Buildkit sets up a long-term lease
+	_, err = bk.Solve(ctx, bkgw.SolveRequest{
+		Definition: container.FS,
+		Evaluate:   true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("solve: %w", err)
 	}
 
-	manifestBlob, err := content.ReadBlob(ctx, store, *manifestDesc)
+	manifestBlob, err := content.ReadBlob(ctx, query.OCIStore(), desc)
 	if err != nil {
 		return nil, fmt.Errorf("image archive read manifest blob: %w", err)
 	}
-
 	var man specs.Manifest
 	err = json.Unmarshal(manifestBlob, &man)
 	if err != nil {
 		return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
 	}
-
-	configBlob, err := content.ReadBlob(ctx, store, man.Config)
+	configBlob, err := content.ReadBlob(ctx, query.OCIStore(), man.Config)
 	if err != nil {
 		return nil, fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
 	}
-
 	var imgSpec specs.Image
 	err = json.Unmarshal(configBlob, &imgSpec)
 	if err != nil {
 		return nil, fmt.Errorf("load image config: %w", err)
 	}
-
 	container.Config = imgSpec.Config
 
 	return container, nil
@@ -1868,6 +1813,15 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 	}, nil
 }
 
+func (container *Container) AsRecoveredService(ctx context.Context, richErr *buildkit.RichError) (*Service, error) {
+	return &Service{
+		Creator:   trace.SpanContextFromContext(ctx),
+		Container: container,
+		ExecMeta:  richErr.Meta,
+		ExecMD:    richErr.ExecMD,
+	}, nil
+}
+
 func (container *Container) ownership(ctx context.Context, owner string) (*Ownership, error) {
 	if owner == "" {
 		// do not change ownership
@@ -1925,6 +1879,10 @@ func (BuildArg) TypeDescription() string {
 
 // OCI manifest annotation that specifies an image's tag
 const ociTagAnnotation = "org.opencontainers.image.ref.name"
+
+func ResolveIndex(ctx context.Context, store content.Store, desc specs.Descriptor, platform specs.Platform, tag string) (*specs.Descriptor, error) {
+	return resolveIndex(ctx, store, desc, platform, tag)
+}
 
 func resolveIndex(ctx context.Context, store content.Store, desc specs.Descriptor, platform specs.Platform, tag string) (*specs.Descriptor, error) {
 	if desc.MediaType != specs.MediaTypeImageIndex {

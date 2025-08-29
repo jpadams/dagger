@@ -560,10 +560,8 @@ func (srv *Server) initializeDaggerClient(
 		UpstreamCacheImports: client.daggerSession.cacheImporterCfgs,
 		Frontends:            srv.frontends,
 
-		Refs:         client.daggerSession.refs,
-		RefsMu:       &client.daggerSession.refsMu,
-		Containers:   client.daggerSession.containers,
-		ContainersMu: &client.daggerSession.containersMu,
+		Refs:   client.daggerSession.refs,
+		RefsMu: &client.daggerSession.refsMu,
 
 		Interactive:        client.daggerSession.interactive,
 		InteractiveCommand: client.daggerSession.interactiveCommand,
@@ -601,7 +599,7 @@ func (srv *Server) initializeDaggerClient(
 
 		// this is needed to set the view of the core api as compatible
 		// with the module we're currently calling from
-		engineVersion := client.mod.Source.Self().EngineVersion
+		engineVersion := client.mod.Source.Value.Self().EngineVersion
 		coreMod.Dag.View = dagql.View(engine.BaseVersion(engine.NormalizeVersion(engineVersion)))
 
 		// NOTE: *technically* we should reload the module here, so that we can

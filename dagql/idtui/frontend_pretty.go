@@ -31,9 +31,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/util/cleanups"
 )
 
 var historyFile = filepath.Join(xdg.DataHome, "dagger", "histfile")
@@ -44,18 +46,21 @@ var ErrInterrupted = errors.New("interrupted")
 type frontendPretty struct {
 	dagui.FrontendOpts
 
+	dag *dagger.Client
+
 	// don't show live progress; just print a full report at the end
 	reportOnly bool
 
 	// updated by Run
 	program     *tea.Program
-	run         func(context.Context) error
+	run         func(context.Context) (cleanups.CleanupF, error)
 	runCtx      context.Context
 	interrupt   context.CancelCauseFunc
 	interrupted bool
 	quitting    bool
 	done        bool
 	err         error
+	cleanup     func()
 
 	// updated by Shell
 	shell           ShellHandler
@@ -106,6 +111,12 @@ type frontendPretty struct {
 	// Add prompt field
 	activeBoolPrompt   *promptBool
 	activeStringPrompt *promptString
+}
+
+func (fe *frontendPretty) SetClient(client *dagger.Client) {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	fe.dag = client
 }
 
 func NewPretty(w io.Writer) Frontend {
@@ -196,7 +207,7 @@ func traceMessage(profile termenv.Profile, url string, msg string) string {
 
 // Run starts the TUI, calls the run function, stops the TUI, and finally
 // prints the primary output to the appropriate stdout/stderr streams.
-func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) error) error {
+func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) (cleanups.CleanupF, error)) error {
 	if opts.TooFastThreshold == 0 {
 		opts.TooFastThreshold = 100 * time.Millisecond
 	}
@@ -206,7 +217,11 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	fe.FrontendOpts = opts
 
 	if fe.reportOnly {
-		fe.err = run(ctx)
+		cleanup, err := run(ctx)
+		if cleanup != nil {
+			err = errors.Join(err, cleanup())
+		}
+		fe.err = err
 	} else {
 		// run the function wrapped in the TUI
 		fe.err = fe.runWithTUI(ctx, run)
@@ -268,7 +283,7 @@ func (fe *frontendPretty) RevealAllSpans() {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Context) error) error {
+func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Context) (cleanups.CleanupF, error)) (rerr error) {
 	// wire up the run so we can call it asynchronously with the TUI running
 	fe.run = run
 	// set up ctx cancellation so the TUI can interrupt via keypresses
@@ -438,7 +453,6 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 	defer fe.mu.Unlock()
 	defer fe.flush()
 	defer fe.recalculateViewLocked() // recalculate view *after* updating the db
-	slog.Debug("frontend exporting spans", "spans", len(spans))
 	return fe.db.ExportSpans(ctx, spans)
 }
 
@@ -618,6 +632,10 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("r"),
 			key.WithHelp("r", "go to error"),
 			KeyEnabled(focused != nil && focused.ErrorOrigin != nil)),
+		key.NewBinding(key.WithKeys("t"),
+			key.WithHelp("t", "start terminal"),
+			KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil),
+		),
 	}
 }
 
@@ -978,7 +996,21 @@ type doneMsg struct {
 }
 
 func (fe *frontendPretty) spawn() (msg tea.Msg) {
-	return doneMsg{fe.run(fe.runCtx)}
+	cleanup, err := fe.run(fe.runCtx)
+	return cleanupMsg{
+		cleanup: func() {
+			err := cleanup()
+			if err != nil {
+				slog.Error("cleanup failed", "err", err)
+			}
+		},
+		msg: doneMsg{err},
+	}
+}
+
+type cleanupMsg struct {
+	cleanup func()
+	msg     tea.Msg
 }
 
 type backgroundDoneMsg struct {
@@ -992,11 +1024,22 @@ type shellDoneMsg struct {
 
 func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nolint: gocyclo
 	switch msg := msg.(type) {
+	case cleanupMsg:
+		if !fe.NoExit || fe.interrupted {
+			go func() {
+				msg.cleanup()
+				fe.program.Send(msg.msg)
+			}()
+		} else {
+			fe.cleanup = msg.cleanup
+			go fe.program.Send(msg.msg)
+		}
+		return fe, nil
 	case doneMsg: // run finished
 		slog.Debug("run finished", "err", msg.err)
 		fe.done = true
 		fe.err = msg.err
-		if fe.eof && !fe.NoExit {
+		if fe.eof && (!fe.NoExit || fe.interrupted) {
 			fe.quitting = true
 			return fe, tea.Quit
 		}
@@ -1005,7 +1048,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 	case eofMsg: // received end of updates
 		slog.Debug("got EOF")
 		fe.eof = true
-		if fe.done && !fe.NoExit {
+		if fe.done && (!fe.NoExit || fe.interrupted) {
 			fe.quitting = true
 			return fe, tea.Quit
 		}
@@ -1228,6 +1271,91 @@ func (fe *frontendPretty) enterInsertMode(auto bool) tea.Cmd {
 	return nil
 }
 
+func (fe *frontendPretty) terminal() {
+	if !fe.FocusedSpan.IsValid() {
+		return
+	}
+	focused := fe.db.Spans.Map[fe.FocusedSpan]
+	if focused == nil {
+		return
+	}
+
+	callback := fe.terminalCallback(focused)
+	if callback != nil {
+		go func() {
+			err := callback()
+			if err != nil {
+				slog.Error("failed to open terminal for span", err)
+			}
+		}()
+	}
+}
+
+func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
+	if fe.dag == nil {
+		// we haven't got a dag client, so can't open a terminal
+		return nil
+	}
+
+	// NOTE: this func is in the hot-path, so just use the call info to
+	// determine if we can create a callback - the actual callback can do the
+	// expensive id reconstruction
+	call := span.Call()
+	if call == nil {
+		return nil
+	}
+
+	switch call.Type.NamedType {
+	case "Container":
+		if span.IsRunning() {
+			break
+		}
+		return func() error {
+			id := loadIDFromSpan(span)
+			if id == "" {
+				return nil
+			}
+			_, err := fe.dag.LoadContainerFromID(dagger.ContainerID(id)).Terminal().Sync(fe.runCtx)
+			return err
+		}
+	case "Directory":
+		if span.IsRunning() {
+			break
+		}
+		return func() error {
+			id := loadIDFromSpan(span)
+			if id == "" {
+				return nil
+			}
+			_, err := fe.dag.LoadDirectoryFromID(dagger.DirectoryID(id)).Terminal().Sync(fe.runCtx)
+			return err
+		}
+	case "Service":
+		return func() error {
+			id := loadIDFromSpan(span)
+			if id == "" {
+				return nil
+			}
+			_, err := fe.dag.LoadServiceFromID(dagger.ServiceID(id)).Terminal().Sync(fe.runCtx)
+			return err
+		}
+	}
+
+	return nil
+}
+
+func loadIDFromSpan(span *dagui.Span) string {
+	callID, err := span.CallID()
+	if err != nil {
+		return ""
+	}
+	id, err := callID.Encode()
+	if err != nil {
+		return ""
+	}
+	return id
+}
+
 func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 	defer func() {
 		// update the prompt in all cases since e.g. going through history
@@ -1270,6 +1398,7 @@ func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
 	return cmd
 }
 
+//nolint:gocyclo // splitting this up doesn't feel more readable
 func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 	lastKey := fe.pressedKey
 	fe.pressedKey = msg.String()
@@ -1363,6 +1492,9 @@ func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "tab", "i":
 		return fe.enterInsertMode(false)
+	case "t":
+		fe.terminal()
+		return nil
 	}
 
 	switch lastKey { //nolint:gocritic
@@ -1518,22 +1650,24 @@ func (fe *frontendPretty) updatePrompt() tea.Cmd {
 }
 
 func (fe *frontendPretty) quit(interruptErr error) tea.Cmd {
-	if fe.done && fe.eof {
-		fe.quitting = true
-		// must have configured NoExit, and now they want
-		// to exit manually
-		return tea.Quit
-	}
-	if fe.interrupted {
+	if fe.cleanup != nil {
+		cleanup := fe.cleanup
+		fe.cleanup = nil // prevent double cleanup
+		go func() {
+			cleanup()
+			fe.quitting = true
+			fe.program.Quit()
+		}()
+	} else if fe.interrupted {
 		slog.Warn("exiting immediately")
 		fe.quitting = true
 		return tea.Quit
 	} else {
 		slog.Warn("canceling... (press again to exit immediately)")
+		fe.interrupted = true
+		fe.interrupt(interruptErr)
 	}
-	fe.interrupted = true
-	fe.interrupt(interruptErr)
-	return nil // tea.Quit is deferred until we receive doneMsg
+	return nil
 }
 
 func (fe *frontendPretty) goStart() {

@@ -215,6 +215,9 @@ type InterfaceTypeDefID string
 // An arbitrary JSON-encoded value.
 type JSON string
 
+// The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
+type JSONValueID string
+
 // The `LLMID` scalar type represents an identifier for an object of type LLM.
 type LLMID string
 
@@ -391,6 +394,15 @@ func (r *Binding) AsGitRepository() *GitRepository {
 	q := r.query.Select("asGitRepository")
 
 	return &GitRepository{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type JSONValue
+func (r *Binding) AsJSONValue() *JSONValue {
+	q := r.query.Select("asJSONValue")
+
+	return &JSONValue{
 		query: q,
 	}
 }
@@ -687,22 +699,23 @@ func (r *Cloud) TraceURL(ctx context.Context) (string, error) {
 type Container struct {
 	query *querybuilder.Selection
 
-	envVariable *string
-	exists      *bool
-	exitCode    *int
-	export      *string
-	exportImage *Void
-	id          *ContainerID
-	imageRef    *string
-	label       *string
-	platform    *Platform
-	publish     *string
-	stderr      *string
-	stdout      *string
-	sync        *ContainerID
-	up          *Void
-	user        *string
-	workdir     *string
+	combinedOutput *string
+	envVariable    *string
+	exists         *bool
+	exitCode       *int
+	export         *string
+	exportImage    *Void
+	id             *ContainerID
+	imageRef       *string
+	label          *string
+	platform       *Platform
+	publish        *string
+	stderr         *string
+	stdout         *string
+	sync           *ContainerID
+	up             *Void
+	user           *string
+	workdir        *string
 }
 type WithContainerFunc func(r *Container) *Container
 
@@ -840,6 +853,8 @@ type ContainerBuildOpts struct {
 }
 
 // Initializes this container from a Dockerfile build.
+//
+// Deprecated: Use `Directory.build` instead
 func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
 	assertNotNil("context", context)
 	q := r.query.Select("build")
@@ -870,6 +885,21 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 	return &Container{
 		query: q,
 	}
+}
+
+// The combined buffered standard output and standard error stream of the last executed command
+//
+// Returns an error if no command was executed
+func (r *Container) CombinedOutput(ctx context.Context) (string, error) {
+	if r.combinedOutput != nil {
+		return *r.combinedOutput, nil
+	}
+	q := r.query.Select("combinedOutput")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Return the container's default arguments.
@@ -1715,9 +1745,11 @@ type ContainerWithExecOpts struct {
 	UseEntrypoint bool
 	// Content to write to the command's standard input. Example: "Hello world")
 	Stdin string
+	// Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
+	RedirectStdin string
 	// Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
 	RedirectStdout string
-	// Like redirectStdout, but for standard error
+	// Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
 	RedirectStderr string
 	// Exit codes this command is allowed to exit with without error
 	//
@@ -1748,6 +1780,10 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `stdin` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stdin) {
 			q = q.Arg("stdin", opts[i].Stdin)
+		}
+		// `redirectStdin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RedirectStdin) {
+			q = q.Arg("redirectStdin", opts[i].RedirectStdin)
 		}
 		// `redirectStdout` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RedirectStdout) {
@@ -4331,6 +4367,30 @@ func (r *Env) WithGitRepositoryOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type JSONValue in the environment
+func (r *Env) WithJSONValueInput(name string, value *JSONValue, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withJSONValueInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired JSONValue output to be assigned in the environment
+func (r *Env) WithJSONValueOutput(name string, description string) *Env {
+	q := r.query.Select("withJSONValueOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type LLM in the environment
 func (r *Env) WithLLMInput(name string, value *LLM, description string) *Env {
 	assertNotNil("value", value)
@@ -5794,6 +5854,14 @@ type GitRef struct {
 	id     *GitRefID
 	ref    *string
 }
+type WithGitRefFunc func(r *GitRef) *GitRef
+
+// With calls the provided function with current GitRef.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *GitRef) With(f WithGitRefFunc) *GitRef {
+	return f(r)
+}
 
 func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
 	return &GitRef{
@@ -5812,6 +5880,17 @@ func (r *GitRef) Commit(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Find the best common ancestor between this ref and another ref.
+func (r *GitRef) CommonAncestor(other *GitRef) *GitRef {
+	assertNotNil("other", other)
+	q := r.query.Select("commonAncestor")
+	q = q.Arg("other", other)
+
+	return &GitRef{
+		query: q,
+	}
 }
 
 // A unique identifier for this GitRef.
@@ -6094,6 +6173,16 @@ type Host struct {
 
 func (r *Host) WithGraphQLQuery(q *querybuilder.Selection) *Host {
 	return &Host{
+		query: q,
+	}
+}
+
+// Accesses a container image on the host.
+func (r *Host) ContainerImage(name string) *Container {
+	q := r.query.Select("containerImage")
+	q = q.Arg("name", name)
+
+	return &Container{
 		query: q,
 	}
 }
@@ -6518,6 +6607,247 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+type JSONValue struct {
+	query *querybuilder.Selection
+
+	asBoolean *bool
+	asInteger *int
+	asString  *string
+	contents  *JSON
+	id        *JSONValueID
+}
+type WithJSONValueFunc func(r *JSONValue) *JSONValue
+
+// With calls the provided function with current JSONValue.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *JSONValue) With(f WithJSONValueFunc) *JSONValue {
+	return f(r)
+}
+
+func (r *JSONValue) WithGraphQLQuery(q *querybuilder.Selection) *JSONValue {
+	return &JSONValue{
+		query: q,
+	}
+}
+
+// Decode an array from json
+func (r *JSONValue) AsArray(ctx context.Context) ([]JSONValue, error) {
+	q := r.query.Select("asArray")
+
+	q = q.Select("id")
+
+	type asArray struct {
+		Id JSONValueID
+	}
+
+	convert := func(fields []asArray) []JSONValue {
+		out := []JSONValue{}
+
+		for i := range fields {
+			val := JSONValue{id: &fields[i].Id}
+			val.query = q.Root().Select("loadJSONValueFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asArray
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Decode a boolean from json
+func (r *JSONValue) AsBoolean(ctx context.Context) (bool, error) {
+	if r.asBoolean != nil {
+		return *r.asBoolean, nil
+	}
+	q := r.query.Select("asBoolean")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Decode an integer from json
+func (r *JSONValue) AsInteger(ctx context.Context) (int, error) {
+	if r.asInteger != nil {
+		return *r.asInteger, nil
+	}
+	q := r.query.Select("asInteger")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Decode a string from json
+func (r *JSONValue) AsString(ctx context.Context) (string, error) {
+	if r.asString != nil {
+		return *r.asString, nil
+	}
+	q := r.query.Select("asString")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// JSONValueContentsOpts contains options for JSONValue.Contents
+type JSONValueContentsOpts struct {
+	// Pretty-print
+	Pretty bool
+	// Optional line prefix
+	//
+	// Default: "  "
+	Indent string
+}
+
+// Return the value encoded as json
+func (r *JSONValue) Contents(ctx context.Context, opts ...JSONValueContentsOpts) (JSON, error) {
+	if r.contents != nil {
+		return *r.contents, nil
+	}
+	q := r.query.Select("contents")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `pretty` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Pretty) {
+			q = q.Arg("pretty", opts[i].Pretty)
+		}
+		// `indent` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Indent) {
+			q = q.Arg("indent", opts[i].Indent)
+		}
+	}
+
+	var response JSON
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Lookup the field at the given path, and return its value.
+func (r *JSONValue) Field(path []string) *JSONValue {
+	q := r.query.Select("field")
+	q = q.Arg("path", path)
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
+// List fields of the encoded object
+func (r *JSONValue) Fields(ctx context.Context) ([]string, error) {
+	q := r.query.Select("fields")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this JSONValue.
+func (r *JSONValue) ID(ctx context.Context) (JSONValueID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response JSONValueID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *JSONValue) XXX_GraphQLType() string {
+	return "JSONValue"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *JSONValue) XXX_GraphQLIDType() string {
+	return "JSONValueID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *JSONValue) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *JSONValue) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Encode a boolean to json
+func (r *JSONValue) NewBoolean(value bool) *JSONValue {
+	q := r.query.Select("newBoolean")
+	q = q.Arg("value", value)
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
+// Encode an integer to json
+func (r *JSONValue) NewInteger(value int) *JSONValue {
+	q := r.query.Select("newInteger")
+	q = q.Arg("value", value)
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
+// Encode a string to json
+func (r *JSONValue) NewString(value string) *JSONValue {
+	q := r.query.Select("newString")
+	q = q.Arg("value", value)
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
+// Return a new json value, decoded from the given content
+func (r *JSONValue) WithContents(contents JSON) *JSONValue {
+	q := r.query.Select("withContents")
+	q = q.Arg("contents", contents)
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
+// Set a new field at the given path
+func (r *JSONValue) WithField(path []string, value *JSONValue) *JSONValue {
+	assertNotNil("value", value)
+	q := r.query.Select("withField")
+	q = q.Arg("path", path)
+	q = q.Arg("value", value)
+
+	return &JSONValue{
+		query: q,
+	}
 }
 
 type LLM struct {
@@ -8654,6 +8984,15 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	}
 }
 
+// Initialize a JSON value
+func (r *Client) JSON() *JSONValue {
+	q := r.query.Select("json")
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
 // LLMOpts contains options for Client.LLM
 type LLMOpts struct {
 	// Model to use
@@ -8959,6 +9298,16 @@ func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTyp
 	q = q.Arg("id", id)
 
 	return &InterfaceTypeDef{
+		query: q,
+	}
+}
+
+// Load a JSONValue from its ID.
+func (r *Client) LoadJSONValueFromID(id JSONValueID) *JSONValue {
+	q := r.query.Select("loadJSONValueFromID")
+	q = q.Arg("id", id)
+
+	return &JSONValue{
 		query: q,
 	}
 }
@@ -9518,6 +9867,7 @@ type Service struct {
 	id       *ServiceID
 	start    *ServiceID
 	stop     *ServiceID
+	sync     *ServiceID
 	up       *Void
 }
 type WithServiceFunc func(r *Service) *Service
@@ -9696,6 +10046,38 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 	}, nil
 }
 
+// Forces evaluation of the pipeline in the engine.
+func (r *Service) Sync(ctx context.Context) (*Service, error) {
+	q := r.query.Select("sync")
+
+	var id ServiceID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Service{
+		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+	}, nil
+}
+
+// ServiceTerminalOpts contains options for Service.Terminal
+type ServiceTerminalOpts struct {
+	Cmd []string
+}
+
+func (r *Service) Terminal(opts ...ServiceTerminalOpts) *Service {
+	q := r.query.Select("terminal")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cmd` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cmd) {
+			q = q.Arg("cmd", opts[i].Cmd)
+		}
+	}
+
+	return &Service{
+		query: q,
+	}
+}
+
 // ServiceUpOpts contains options for Service.Up
 type ServiceUpOpts struct {
 	// List of frontend/backend port mappings to forward.
@@ -9798,6 +10180,7 @@ type SourceMap struct {
 	id       *SourceMapID
 	line     *int
 	module   *string
+	url      *string
 }
 
 func (r *SourceMap) WithGraphQLQuery(q *querybuilder.Selection) *SourceMap {
@@ -9891,6 +10274,19 @@ func (r *SourceMap) Module(ctx context.Context) (string, error) {
 		return *r.module, nil
 	}
 	q := r.query.Select("module")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The URL to the file, if any. This can be used to link to the source map in the browser.
+func (r *SourceMap) URL(ctx context.Context) (string, error) {
+	if r.url != nil {
+		return *r.url, nil
+	}
+	q := r.query.Select("url")
 
 	var response string
 

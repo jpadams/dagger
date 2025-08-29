@@ -33,7 +33,7 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	checkClean := func(ctx context.Context, t *testctx.T, checkout *dagger.Directory, clean bool) {
-		out, err := c.Container().From("alpine").
+		out, err := c.Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", checkout).
@@ -227,7 +227,7 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 		_, err := git.Head().Commit(ctx)
 		require.ErrorContains(t, err, "not a git repository")
 		_, err = git.Tags(ctx)
-		require.ErrorContains(t, err, "does not appear to be a git repository")
+		require.ErrorContains(t, err, "not a git repository")
 	})
 }
 
@@ -271,7 +271,7 @@ func (GitSuite) TestGitDepth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	log := func(ctx context.Context, dir *dagger.Directory) (string, error) {
-		res, err := c.Container().From("alpine").
+		res, err := c.Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "git"}).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", dir).
@@ -768,6 +768,114 @@ func (GitSuite) TestWithAuth(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (GitSuite) TestSubmoduleAuth(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	t.Cleanup(func() { _ = c.Close() })
+
+	authToken := c.SetSecret("submodule-test-token", "test-token-"+identity.NewID())
+
+	submoduleContent := c.Directory().WithNewFile("submodule.txt", "This is the submodule content")
+	parentContent := c.Directory().WithNewFile("parent.txt", "This is the parent content")
+
+	// Create bare parent + submodule repos in /srv
+	// Git dance below is necessary: https://github.com/dagger/dagger/pull/10855#discussion_r2264174757
+	gitReposCtr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "Test User"}).
+		WithExec([]string{"git", "config", "--global", "init.defaultBranch", "main"}).
+		WithExec([]string{"sh", "-lc", "mkdir -p /srv && git init --bare /srv/submodule.git && git init --bare /srv/parent.git"}).
+		WithDirectory("/tmp/sub", submoduleContent).
+		WithExec([]string{"sh", "-lc", `
+set -eux
+cd /tmp/sub
+git init
+git add .
+git commit -m 'Initial submodule commit'
+git remote add origin file:///srv/submodule.git
+git push -u origin main
+`}).
+		WithDirectory("/tmp/parent", parentContent).
+		WithExec([]string{"sh", "-lc", `
+set -eux
+cd /tmp/parent
+git init
+git add .
+git commit -m 'Initial parent commit'
+git -c protocol.file.allow=always submodule add file:///srv/submodule.git sub
+git commit -m 'Add submodule (absolute url to fetch)'
+git config -f .gitmodules submodule.sub.url ../submodule.git
+git add .gitmodules
+git commit -m 'Make submodule URL relative'
+git remote add origin file:///srv/parent.git
+git push -u origin main
+# dumb HTTP needs server-info
+git --git-dir=/srv/submodule.git update-server-info
+git --git-dir=/srv/parent.git    update-server-info
+`})
+
+	gitReposDir := gitReposCtr.Directory("/srv")
+
+	t.Run("smart-http", func(ctx context.Context, t *testctx.T) {
+		gitSrv, base := gitSmartHTTPServiceDirAuth(ctx, t, c, "", gitReposDir, "", authToken)
+		parentURL := base + "/parent.git"
+
+		t.Run("with auth", func(ctx context.Context, t *testctx.T) {
+			tree := c.Git(parentURL, dagger.GitOpts{
+				ExperimentalServiceHost: gitSrv,
+				HTTPAuthToken:           authToken,
+			}).Branch("main").Tree()
+
+			txt, err := tree.File("parent.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "This is the parent content", txt)
+
+			sub, err := tree.File("sub/submodule.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "This is the submodule content", sub)
+		})
+
+		t.Run("without auth fails", func(ctx context.Context, t *testctx.T) {
+			_, err := c.Git(parentURL, dagger.GitOpts{
+				ExperimentalServiceHost: gitSrv,
+			}).Branch("main").Tree().File("parent.txt").Contents(ctx)
+			require.Error(t, err)
+			requireErrOut(t, err, "git error")
+			requireErrOut(t, err, "Authentication failed")
+		})
+	})
+
+	t.Run("dumb-http", func(ctx context.Context, t *testctx.T) {
+		httpSrv, base := httpServiceDirAuth(ctx, t, c, "", gitReposDir, "x-access-token", authToken)
+		parentURL := base + "/parent.git"
+
+		t.Run("with auth fallback", func(ctx context.Context, t *testctx.T) {
+			tree := c.Git(parentURL, dagger.GitOpts{
+				ExperimentalServiceHost: httpSrv,
+				HTTPAuthToken:           authToken,
+			}).Branch("main").Tree()
+
+			txt, err := tree.File("parent.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "This is the parent content", txt)
+
+			sub, err := tree.File("sub/submodule.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "This is the submodule content", sub)
+		})
+
+		t.Run("without auth fails", func(ctx context.Context, t *testctx.T) {
+			_, err := c.Git(parentURL, dagger.GitOpts{
+				ExperimentalServiceHost: httpSrv,
+			}).Branch("main").Tree().File("parent.txt").Contents(ctx)
+			require.Error(t, err)
+			requireErrOut(t, err, "git error")
+			requireErrOut(t, err, "Authentication failed")
+		})
+	})
+}
+
 func (GitSuite) TestRemoteUpdates(ctx context.Context, t *testctx.T) {
 	// test case for dagger/dagger#9405, where upstream changes between fetches
 
@@ -941,4 +1049,50 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 		testTags(t, git)
 		testBranches(t, git)
 	})
+}
+
+func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"git", "config", "--global", "user.name", "tester"}).
+		WithExec([]string{"git", "config", "--global", "user.email", "test@dagger.io"}).
+		WithExec([]string{"sh", "-c", `echo "A" > file.txt && git add file.txt && git commit -m "A"`}).
+		WithExec([]string{"git", "checkout", "-b", "branch1"}).
+		WithExec([]string{"sh", "-c", `echo "B" >> file.txt && git add file.txt && git commit -m "B"`}).
+		WithExec([]string{"git", "checkout", "master"}).
+		WithExec([]string{"git", "checkout", "-b", "branch2"}).
+		WithExec([]string{"sh", "-c", `echo "C" >> file.txt && git add file.txt && git commit -m "C"`}).
+		WithExec([]string{"git", "checkout", "master"})
+	git := ctr.Directory(".").AsGit()
+
+	base, err := ctr.WithExec([]string{"git", "rev-parse", "master"}).Stdout(ctx)
+	require.NoError(t, err)
+	base = strings.TrimSpace(base)
+
+	// test the common ancestor between two branches
+	mergeBase := git.Branch("branch1").CommonAncestor(git.Branch("branch2"))
+	commit, err := mergeBase.Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, base, commit)
+	ref, err := mergeBase.Ref(ctx)
+	require.NoError(t, err)
+	require.Equal(t, base, ref)
+
+	ctr = ctr.
+		WithExec([]string{"git", "checkout", "-b", "branch3"}).
+		WithExec([]string{"sh", "-c", `echo "D" >> file.txt && git add file.txt && git commit -m "D"`})
+	git2 := ctr.Directory(".").AsGit()
+
+	// test the common ancestor between two branches from different refs
+	mergeBase = git.Branch("branch1").CommonAncestor(git2.Branch("branch3"))
+	commit, err = mergeBase.Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, base, commit)
+	ref, err = mergeBase.Ref(ctx)
+	require.NoError(t, err)
+	require.Equal(t, base, ref)
 }

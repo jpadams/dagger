@@ -425,12 +425,17 @@ export type ContainerWithExecOpts = {
   stdin?: string
 
   /**
+   * Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
+   */
+  redirectStdin?: string
+
+  /**
    * Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
    */
   redirectStdout?: string
 
   /**
-   * Like redirectStdout, but for standard error
+   * Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
    */
   redirectStderr?: string
 
@@ -1287,6 +1292,23 @@ export type InterfaceTypeDefID = string & { __InterfaceTypeDefID: never }
  */
 export type JSON = string & { __JSON: never }
 
+export type JSONValueContentsOpts = {
+  /**
+   * Pretty-print
+   */
+  pretty?: boolean
+
+  /**
+   * Optional line prefix
+   */
+  indent?: string
+}
+
+/**
+ * The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
+ */
+export type JSONValueID = string & { __JSONValueID: never }
+
 /**
  * The `LLMID` scalar type represents an identifier for an object of type LLM.
  */
@@ -1674,6 +1696,10 @@ export type ServiceStopOpts = {
   kill?: boolean
 }
 
+export type ServiceTerminalOpts = {
+  cmd?: string[]
+}
+
 export type ServiceUpOpts = {
   /**
    * List of frontend/backend port mappings to forward.
@@ -1987,11 +2013,23 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
  */
 export type Void = string & { __Void: never }
 
+export type __DirectiveArgsOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __FieldArgsOpts = {
+  includeDeprecated?: boolean
+}
+
 export type __TypeEnumValuesOpts = {
   includeDeprecated?: boolean
 }
 
 export type __TypeFieldsOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __TypeInputFieldsOpts = {
   includeDeprecated?: boolean
 }
 
@@ -2102,6 +2140,14 @@ export class Binding extends BaseClient {
   asGitRepository = (): GitRepository => {
     const ctx = this._ctx.select("asGitRepository")
     return new GitRepository(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type JSONValue
+   */
+  asJSONValue = (): JSONValue => {
+    const ctx = this._ctx.select("asJSONValue")
+    return new JSONValue(ctx)
   }
 
   /**
@@ -2320,6 +2366,7 @@ export class Cloud extends BaseClient {
  */
 export class Container extends BaseClient {
   private readonly _id?: ContainerID = undefined
+  private readonly _combinedOutput?: string = undefined
   private readonly _envVariable?: string = undefined
   private readonly _exists?: boolean = undefined
   private readonly _exitCode?: number = undefined
@@ -2342,6 +2389,7 @@ export class Container extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: ContainerID,
+    _combinedOutput?: string,
     _envVariable?: string,
     _exists?: boolean,
     _exitCode?: number,
@@ -2361,6 +2409,7 @@ export class Container extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._combinedOutput = _combinedOutput
     this._envVariable = _envVariable
     this._exists = _exists
     this._exitCode = _exitCode
@@ -2452,10 +2501,28 @@ export class Container extends BaseClient {
    * @param opts.noInit If set, skip the automatic init process injected into containers created by RUN statements.
    *
    * This should only be used if the user requires that their exec processes be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   * @deprecated Use `Directory.build` instead
    */
   build = (context: Directory, opts?: ContainerBuildOpts): Container => {
     const ctx = this._ctx.select("build", { context, ...opts })
     return new Container(ctx)
+  }
+
+  /**
+   * The combined buffered standard output and standard error stream of the last executed command
+   *
+   * Returns an error if no command was executed
+   */
+  combinedOutput = async (): Promise<string> => {
+    if (this._combinedOutput) {
+      return this._combinedOutput
+    }
+
+    const ctx = this._ctx.select("combinedOutput")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -3045,8 +3112,9 @@ export class Container extends BaseClient {
    * Defaults to the container's default arguments (see "defaultArgs" and "withDefaultArgs").
    * @param opts.useEntrypoint Apply the OCI entrypoint, if present, by prepending it to the args. Ignored by default.
    * @param opts.stdin Content to write to the command's standard input. Example: "Hello world")
+   * @param opts.redirectStdin Redirect the command's standard input from a file in the container. Example: "./stdin.txt"
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container. Example: "./stdout.txt"
-   * @param opts.redirectStderr Like redirectStdout, but for standard error
+   * @param opts.redirectStderr Redirect the command's standard error to a file in the container. Example: "./stderr.txt"
    * @param opts.expect Exit codes this command is allowed to exit with without error
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. Like --privileged in Docker
@@ -4970,6 +5038,35 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type JSONValue in the environment
+   * @param name The name of the binding
+   * @param value The JSONValue value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withJSONValueInput = (
+    name: string,
+    value: JSONValue,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withJSONValueInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired JSONValue output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withJSONValueOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withJSONValueOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type LLM in the environment
    * @param name The name of the binding
    * @param value The LLM value to assign to the binding
@@ -6304,6 +6401,15 @@ export class GitRef extends BaseClient {
   }
 
   /**
+   * Find the best common ancestor between this ref and another ref.
+   * @param other The other ref to compare against.
+   */
+  commonAncestor = (other: GitRef): GitRef => {
+    const ctx = this._ctx.select("commonAncestor", { other })
+    return new GitRef(ctx)
+  }
+
+  /**
    * The resolved ref name at this ref.
    */
   ref = async (): Promise<string> => {
@@ -6326,6 +6432,15 @@ export class GitRef extends BaseClient {
   tree = (opts?: GitRefTreeOpts): Directory => {
     const ctx = this._ctx.select("tree", { ...opts })
     return new Directory(ctx)
+  }
+
+  /**
+   * Call the provided function with current GitRef.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: GitRef) => GitRef) => {
+    return arg(this)
   }
 }
 
@@ -6493,6 +6608,15 @@ export class Host extends BaseClient {
     const response: Awaited<HostID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Accesses a container image on the host.
+   * @param name Name of the image to access.
+   */
+  containerImage = (name: string): Container => {
+    const ctx = this._ctx.select("containerImage", { name })
+    return new Container(ctx)
   }
 
   /**
@@ -6749,6 +6873,201 @@ export class InterfaceTypeDef extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+}
+
+export class JSONValue extends BaseClient {
+  private readonly _id?: JSONValueID = undefined
+  private readonly _asBoolean?: boolean = undefined
+  private readonly _asInteger?: number = undefined
+  private readonly _asString?: string = undefined
+  private readonly _contents?: JSON = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: JSONValueID,
+    _asBoolean?: boolean,
+    _asInteger?: number,
+    _asString?: string,
+    _contents?: JSON,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._asBoolean = _asBoolean
+    this._asInteger = _asInteger
+    this._asString = _asString
+    this._contents = _contents
+  }
+
+  /**
+   * A unique identifier for this JSONValue.
+   */
+  id = async (): Promise<JSONValueID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<JSONValueID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Decode an array from json
+   */
+  asArray = async (): Promise<JSONValue[]> => {
+    type asArray = {
+      id: JSONValueID
+    }
+
+    const ctx = this._ctx.select("asArray").select("id")
+
+    const response: Awaited<asArray[]> = await ctx.execute()
+
+    return response.map((r) => new Client(ctx.copy()).loadJSONValueFromID(r.id))
+  }
+
+  /**
+   * Decode a boolean from json
+   */
+  asBoolean = async (): Promise<boolean> => {
+    if (this._asBoolean) {
+      return this._asBoolean
+    }
+
+    const ctx = this._ctx.select("asBoolean")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Decode an integer from json
+   */
+  asInteger = async (): Promise<number> => {
+    if (this._asInteger) {
+      return this._asInteger
+    }
+
+    const ctx = this._ctx.select("asInteger")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Decode a string from json
+   */
+  asString = async (): Promise<string> => {
+    if (this._asString) {
+      return this._asString
+    }
+
+    const ctx = this._ctx.select("asString")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Return the value encoded as json
+   * @param opts.pretty Pretty-print
+   * @param opts.indent Optional line prefix
+   */
+  contents = async (opts?: JSONValueContentsOpts): Promise<JSON> => {
+    if (this._contents) {
+      return this._contents
+    }
+
+    const ctx = this._ctx.select("contents", { ...opts })
+
+    const response: Awaited<JSON> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Lookup the field at the given path, and return its value.
+   * @param path Path of the field to lookup, encoded as an array of field names
+   */
+  field = (path: string[]): JSONValue => {
+    const ctx = this._ctx.select("field", { path })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * List fields of the encoded object
+   */
+  fields = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("fields")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Encode a boolean to json
+   * @param value New boolean value
+   */
+  newBoolean = (value: boolean): JSONValue => {
+    const ctx = this._ctx.select("newBoolean", { value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Encode an integer to json
+   * @param value New integer value
+   */
+  newInteger = (value: number): JSONValue => {
+    const ctx = this._ctx.select("newInteger", { value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Encode a string to json
+   * @param value New string value
+   */
+  newString = (value: string): JSONValue => {
+    const ctx = this._ctx.select("newString", { value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Return a new json value, decoded from the given content
+   * @param contents New JSON-encoded contents
+   */
+  withContents = (contents: JSON): JSONValue => {
+    const ctx = this._ctx.select("withContents", { contents })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Set a new field at the given path
+   * @param path Path of the field to set, encoded as an array of field names
+   * @param value The new value of the field
+   */
+  withField = (path: string[], value: JSONValue): JSONValue => {
+    const ctx = this._ctx.select("withField", { path, value })
+    return new JSONValue(ctx)
+  }
+
+  /**
+   * Call the provided function with current JSONValue.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: JSONValue) => JSONValue) => {
+    return arg(this)
   }
 }
 
@@ -8540,6 +8859,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Initialize a JSON value
+   */
+  json = (): JSONValue => {
+    const ctx = this._ctx.select("json")
+    return new JSONValue(ctx)
+  }
+
+  /**
    * Initialize a Large Language Model (LLM)
    * @param opts.model Model to use
    * @param opts.maxAPICalls Cap the number of API calls for this LLM
@@ -8776,6 +9103,14 @@ export class Client extends BaseClient {
   loadInterfaceTypeDefFromID = (id: InterfaceTypeDefID): InterfaceTypeDef => {
     const ctx = this._ctx.select("loadInterfaceTypeDefFromID", { id })
     return new InterfaceTypeDef(ctx)
+  }
+
+  /**
+   * Load a JSONValue from its ID.
+   */
+  loadJSONValueFromID = (id: JSONValueID): JSONValue => {
+    const ctx = this._ctx.select("loadJSONValueFromID", { id })
+    return new JSONValue(ctx)
   }
 
   /**
@@ -9241,6 +9576,7 @@ export class Service extends BaseClient {
   private readonly _hostname?: string = undefined
   private readonly _start?: ServiceID = undefined
   private readonly _stop?: ServiceID = undefined
+  private readonly _sync?: ServiceID = undefined
   private readonly _up?: Void = undefined
 
   /**
@@ -9253,6 +9589,7 @@ export class Service extends BaseClient {
     _hostname?: string,
     _start?: ServiceID,
     _stop?: ServiceID,
+    _sync?: ServiceID,
     _up?: Void,
   ) {
     super(ctx)
@@ -9262,6 +9599,7 @@ export class Service extends BaseClient {
     this._hostname = _hostname
     this._start = _start
     this._stop = _stop
+    this._sync = _sync
     this._up = _up
   }
 
@@ -9357,6 +9695,21 @@ export class Service extends BaseClient {
   }
 
   /**
+   * Forces evaluation of the pipeline in the engine.
+   */
+  sync = async (): Promise<Service> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<ServiceID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadServiceFromID(response)
+  }
+  terminal = (opts?: ServiceTerminalOpts): Service => {
+    const ctx = this._ctx.select("terminal", { ...opts })
+    return new Service(ctx)
+  }
+
+  /**
    * Creates a tunnel that forwards traffic from the caller's network to this service.
    * @param opts.ports List of frontend/backend port mappings to forward.
    *
@@ -9432,6 +9785,7 @@ export class SourceMap extends BaseClient {
   private readonly _filename?: string = undefined
   private readonly _line?: number = undefined
   private readonly _module?: string = undefined
+  private readonly _url?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -9443,6 +9797,7 @@ export class SourceMap extends BaseClient {
     _filename?: string,
     _line?: number,
     _module?: string,
+    _url?: string,
   ) {
     super(ctx)
 
@@ -9451,6 +9806,7 @@ export class SourceMap extends BaseClient {
     this._filename = _filename
     this._line = _line
     this._module = _module
+    this._url = _url
   }
 
   /**
@@ -9522,6 +9878,21 @@ export class SourceMap extends BaseClient {
     }
 
     const ctx = this._ctx.select("module")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The URL to the file, if any. This can be used to link to the source map in the browser.
+   */
+  url = async (): Promise<string> => {
+    if (this._url) {
+      return this._url
+    }
+
+    const ctx = this._ctx.select("url")
 
     const response: Awaited<string> = await ctx.execute()
 

@@ -23,7 +23,7 @@ func New(
 	source *dagger.Directory,
 	// Go version
 	// +optional
-	// +default="1.24.4"
+	// +default="1.25.0"
 	version string,
 	// Use a custom module cache
 	// +optional
@@ -84,7 +84,7 @@ func New(
 				// Install protoc for protobug support by default
 				// The specific version is dictated by Dagger's own requirement
 				// FIXME: make this optional with overlay support
-				"protoc~3.21.12",
+				"protobuf-dev~3.29.5",
 				"ca-certificates",
 			}}).
 			WithEnvVariable("GOLANG_VERSION", version).

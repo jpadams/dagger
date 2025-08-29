@@ -76,6 +76,9 @@ defmodule Dagger.Container do
     }
   end
 
+  @deprecated """
+  Use `Directory.build` instead
+  """
   @doc """
   Initializes this container from a Dockerfile build.
   """
@@ -107,6 +110,19 @@ defmodule Dagger.Container do
       query_builder: query_builder,
       client: container.client
     }
+  end
+
+  @doc """
+  The combined buffered standard output and standard error stream of the last executed command
+
+  Returns an error if no command was executed
+  """
+  @spec combined_output(t()) :: {:ok, String.t()} | {:error, term()}
+  def combined_output(%__MODULE__{} = container) do
+    query_builder =
+      container.query_builder |> QB.select("combinedOutput")
+
+    Client.execute(container.client, query_builder)
   end
 
   @doc """
@@ -749,6 +765,7 @@ defmodule Dagger.Container do
   @spec with_exec(t(), [String.t()], [
           {:use_entrypoint, boolean() | nil},
           {:stdin, String.t() | nil},
+          {:redirect_stdin, String.t() | nil},
           {:redirect_stdout, String.t() | nil},
           {:redirect_stderr, String.t() | nil},
           {:expect, Dagger.ReturnType.t() | nil},
@@ -764,6 +781,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("args", args)
       |> QB.maybe_put_arg("useEntrypoint", optional_args[:use_entrypoint])
       |> QB.maybe_put_arg("stdin", optional_args[:stdin])
+      |> QB.maybe_put_arg("redirectStdin", optional_args[:redirect_stdin])
       |> QB.maybe_put_arg("redirectStdout", optional_args[:redirect_stdout])
       |> QB.maybe_put_arg("redirectStderr", optional_args[:redirect_stderr])
       |> QB.maybe_put_arg("expect", optional_args[:expect])

@@ -45,6 +45,7 @@
               <li><a href="#query-git">git</a></li>
               <li><a href="#query-host">host</a></li>
               <li><a href="#query-http">http</a></li>
+              <li><a href="#query-json">json</a></li>
               <li><a href="#query-llm">llm</a></li>
               <li><a href="#query-loadBindingFromID">loadBindingFromID</a></li>
               <li><a href="#query-loadCacheVolumeFromID">loadCacheVolumeFromID</a></li>
@@ -74,6 +75,7 @@
               <li><a href="#query-loadHostFromID">loadHostFromID</a></li>
               <li><a href="#query-loadInputTypeDefFromID">loadInputTypeDefFromID</a></li>
               <li><a href="#query-loadInterfaceTypeDefFromID">loadInterfaceTypeDefFromID</a></li>
+              <li><a href="#query-loadJSONValueFromID">loadJSONValueFromID</a></li>
               <li><a href="#query-loadLLMFromID">loadLLMFromID</a></li>
               <li><a href="#query-loadLLMTokenUsageFromID">loadLLMTokenUsageFromID</a></li>
               <li><a href="#query-loadLabelFromID">loadLabelFromID</a></li>
@@ -167,6 +169,8 @@
               <li><a href="#definition-InterfaceTypeDef">InterfaceTypeDef</a></li>
               <li><a href="#definition-InterfaceTypeDefID">InterfaceTypeDefID</a></li>
               <li><a href="#definition-JSON">JSON</a></li>
+              <li><a href="#definition-JSONValue">JSONValue</a></li>
+              <li><a href="#definition-JSONValueID">JSONValueID</a></li>
               <li><a href="#definition-LLM">LLM</a></li>
               <li><a href="#definition-LLMID">LLMID</a></li>
               <li><a href="#definition-LLMTokenUsage">LLMTokenUsage</a></li>
@@ -1134,6 +1138,39 @@
   }</span></span>
 }</span></span>
 </code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-json" class="operation operation-query" data-traverse-target="query-json">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>json</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Initialize a JSON value</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-JSONValue"><code>JSONValue!</code></a>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
                 </div>
               </div>
             </div>
@@ -2680,6 +2717,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadJSONValueFromID" class="operation operation-query" data-traverse-target="query-loadJSONValueFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadJSONValueFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a JSONValue from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-JSONValue"><code>JSONValue!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-JSONValueID"><code>JSONValueID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadLLMFromID" class="operation operation-query" data-traverse-target="query-loadLLMFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -3995,6 +4085,10 @@
                         <td> Retrieve the binding value, as type GitRepository </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asJSONValue" href="#Binding-asJSONValue"><code>asJSONValue</code></a> - <span class="property-type"><a href="#definition-JSONValue"><code>JSONValue!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type JSONValue </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asLLM" href="#Binding-asLLM"><code>asLLM</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
                         <td> Retrieve the binding value, as type LLM </td>
                       </tr>
@@ -4367,8 +4461,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Container-build" href="#Container-build"><code>build</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Initializes this container from a Dockerfile build. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Container-build" href="#Container-build"><code>build</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Initializes this container from a Dockerfile build. <span class="deprecation-reason">Use <code>Directory.build</code> instead</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -4404,6 +4499,13 @@
                               </div>
                             </div>
                           </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Container-combinedOutput" href="#Container-combinedOutput"><code>combinedOutput</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td>
+                          <p>The combined buffered standard output and standard error stream of the last executed command</p>
+                          <p>Returns an error if no command was executed</p>
                         </td>
                       </tr>
                       <tr>
@@ -5011,12 +5113,16 @@
                                 <p>Content to write to the command&#39;s standard input. Example: &quot;Hello world&quot;)</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>redirectStdin</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Redirect the command&#39;s standard input from a file in the container. Example: &quot;./stdin.txt&quot;</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>redirectStdout</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>Redirect the command&#39;s standard output to a file in the container. Example: &quot;./stdout.txt&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>redirectStderr</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Like redirectStdout, but for standard error</p>
+                                <p>Redirect the command&#39;s standard error to a file in the container. Example: &quot;./stderr.txt&quot;</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expect</code></span> - <span class="property-type"><a href="#definition-ReturnType"><code>ReturnType</code></a></span></h6>
@@ -6779,7 +6885,7 @@
                         <td> The name of the enum. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-sourceMap" href="#EnumTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-sourceMap" href="#EnumTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this enum declaration. </td>
                       </tr>
                       <tr>
@@ -6846,7 +6952,7 @@
                         <td> The name of the enum member. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-sourceMap" href="#EnumValueTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-sourceMap" href="#EnumValueTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this enum member declaration. </td>
                       </tr>
                       <tr>
@@ -7284,6 +7390,52 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withGitRepositoryOutput" href="#Env-withGitRepositoryOutput"><code>withGitRepositoryOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Declare a desired GitRepository output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withJSONValueInput" href="#Env-withJSONValueInput"><code>withJSONValueInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type JSONValue in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-JSONValueID"><code>JSONValueID!</code></a></span></h6>
+                                <p>The JSONValue value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withJSONValueOutput" href="#Env-withJSONValueOutput"><code>withJSONValueOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired JSONValue output to be assigned in the environment </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -7949,7 +8101,7 @@
                         <td> The name of the field in lowerCamelCase format. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="FieldTypeDef-sourceMap" href="#FieldTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="FieldTypeDef-sourceMap" href="#FieldTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this field declaration. </td>
                       </tr>
                       <tr>
@@ -8153,7 +8305,7 @@
                         <td> The type returned by the function. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Function-sourceMap" href="#Function-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Function-sourceMap" href="#Function-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this function declaration. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
@@ -8284,7 +8436,7 @@
                         <td> The name of the argument in lowerCamelCase format. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="FunctionArg-sourceMap" href="#FunctionArg-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="FunctionArg-sourceMap" href="#FunctionArg-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this arg declaration. </td>
                       </tr>
                       <tr>
@@ -8587,6 +8739,23 @@
                         <td data-property-name=""><a class="property-name" id="GitRef-commit" href="#GitRef-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The resolved commit id at this ref. </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="GitRef-commonAncestor" href="#GitRef-commonAncestor"><code>commonAncestor</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td> Find the best common ancestor between this ref and another ref. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>other</code></span> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span></h6>
+                                <p>The other ref to compare against.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitRef-id" href="#GitRef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span> </td>
                         <td> A unique identifier for this GitRef. </td>
@@ -8848,6 +9017,23 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Host-containerImage" href="#Host-containerImage"><code>containerImage</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Accesses a container image on the host. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Name of the image to access.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Host-directory" href="#Host-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> Accesses a directory on the host. </td>
@@ -9273,7 +9459,7 @@
                         <td> The name of the interface. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="InterfaceTypeDef-sourceMap" href="#InterfaceTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="InterfaceTypeDef-sourceMap" href="#InterfaceTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this interface declaration. </td>
                       </tr>
                       <tr>
@@ -9310,6 +9496,194 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>An arbitrary JSON-encoded value.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-JSONValue" class="definition definition-object" data-traverse-target="definition-JSONValue">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">JSONValue</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="JSONValue-asArray" href="#JSONValue-asArray"><code>asArray</code></a> - <span class="property-type"><a href="#definition-JSONValue"><code>[JSONValue!]!</code></a></span> </td>
+                        <td> Decode an array from json </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="JSONValue-asBoolean" href="#JSONValue-asBoolean"><code>asBoolean</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Decode a boolean from json </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="JSONValue-asInteger" href="#JSONValue-asInteger"><code>asInteger</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> Decode an integer from json </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="JSONValue-asString" href="#JSONValue-asString"><code>asString</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Decode a string from json </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="JSONValue-contents" href="#JSONValue-contents"><code>contents</code></a> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span> </td>
+                        <td> Return the value encoded as json </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>pretty</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Pretty-print</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>indent</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Optional line prefix</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="JSONValue-field" href="#JSONValue-field"><code>field</code></a> - <span class="property-type"><a href="#definition-JSONValue"><code>JSONValue!</code></a></span> </td>
+                        <td> Lookup the field at the given path, and return its value. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
+                                <p>Path of the field to lookup, encoded as an array of field names</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="JSONValue-fields" href="#JSONValue-fields"><code>fields</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> List fields of the encoded object </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="JSONValue-id" href="#JSONValue-id"><code>id</code></a> - <span class="property-type"><a href="#definition-JSONValueID"><code>JSONValueID!</code></a></span> </td>
+                        <td> A unique identifier for this JSONValue. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="JSONValue-newBoolean" href="#JSONValue-newBoolean"><code>newBoolean</code></a> - <span class="property-type"><a href="#definition-JSONValue"><code>JSONValue!</code></a></span> </td>
+                        <td> Encode a boolean to json </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span></h6>
+                                <p>New boolean value</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="JSONValue-newInteger" href="#JSONValue-newInteger"><code>newInteger</code></a> - <span class="property-type"><a href="#definition-JSONValue"><code>JSONValue!</code></a></span> </td>
+                        <td> Encode an integer to json </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span></h6>
+                                <p>New integer value</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="JSONValue-newString" href="#JSONValue-newString"><code>newString</code></a> - <span class="property-type"><a href="#definition-JSONValue"><code>JSONValue!</code></a></span> </td>
+                        <td> Encode a string to json </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>New string value</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="JSONValue-withContents" href="#JSONValue-withContents"><code>withContents</code></a> - <span class="property-type"><a href="#definition-JSONValue"><code>JSONValue!</code></a></span> </td>
+                        <td> Return a new json value, decoded from the given content </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>contents</code></span> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span></h6>
+                                <p>New JSON-encoded contents</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="JSONValue-withField" href="#JSONValue-withField"><code>withField</code></a> - <span class="property-type"><a href="#definition-JSONValue"><code>JSONValue!</code></a></span> </td>
+                        <td> Set a new field at the given path </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
+                                <p>Path of the field to set, encoded as an array of field names</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-JSONValueID"><code>JSONValueID!</code></a></span></h6>
+                                <p>The new value of the field</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-JSONValueID" class="definition definition-scalar" data-traverse-target="definition-JSONValueID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">JSONValueID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>JSONValueID</code> scalar type represents an identifier for an object of type JSONValue.</p>
                 </div>
               </div>
             </div>
@@ -9737,7 +10111,7 @@
                         <td> Objects served by this module. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Module-runtime" href="#Module-runtime"><code>runtime</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Module-runtime" href="#Module-runtime"><code>runtime</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container</code></a></span> </td>
                         <td> The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile. </td>
                       </tr>
                       <tr>
@@ -9765,7 +10139,7 @@
                         </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Module-source" href="#Module-source"><code>source</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Module-source" href="#Module-source"><code>source</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource</code></a></span> </td>
                         <td> The source for the module. </td>
                       </tr>
                       <tr>
@@ -10445,7 +10819,7 @@
                         <td> The name of the object. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ObjectTypeDef-sourceMap" href="#ObjectTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="ObjectTypeDef-sourceMap" href="#ObjectTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap</code></a></span> </td>
                         <td> The location of this object declaration. </td>
                       </tr>
                       <tr>
@@ -10946,6 +11320,27 @@
                           </div>
                         </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Service-sync" href="#Service-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID!</code></a></span> </td>
+                        <td> Forces evaluation of the pipeline in the engine. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Service-terminal" href="#Service-terminal"><code>terminal</code></a> - <span class="property-type"><a href="#definition-Service"><code>Service!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>cmd</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Service-up" href="#Service-up"><code>up</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>
                         <td> Creates a tunnel that forwards traffic from the caller's network to this service. </td>
@@ -11090,6 +11485,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="SourceMap-module" href="#SourceMap-module"><code>module</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The module dependency this was declared in. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="SourceMap-url" href="#SourceMap-url"><code>url</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The URL to the file, if any. This can be used to link to the source map in the browser. </td>
                       </tr>
                     </tbody>
                   </table>

@@ -24,8 +24,6 @@ import (
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	bkfrontend "github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
-	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	bksolver "github.com/moby/buildkit/solver"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
@@ -38,6 +36,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session/git"
@@ -75,10 +74,8 @@ type Opts struct {
 	UpstreamCacheImports []bkgw.CacheOptionsEntry
 	Frontends            map[string]bkfrontend.Frontend
 
-	Refs         map[Reference]struct{}
-	RefsMu       *sync.Mutex
-	Containers   map[bkgw.Container]struct{}
-	ContainersMu *sync.Mutex
+	Refs   map[Reference]struct{}
+	RefsMu *sync.Mutex
 
 	Interactive        bool
 	InteractiveCommand []string
@@ -239,117 +236,6 @@ func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.Sourc
 	ctx = withOutgoingContext(ctx)
 
 	return c.LLBBridge.ResolveSourceMetadata(ctx, op, opt)
-}
-
-type ContainerMount struct {
-	*bkgw.Mount
-	WorkerRef *bkworker.WorkerRef
-}
-
-type NewContainerRequest struct {
-	Mounts   []ContainerMount
-	Platform *bksolverpb.Platform
-	Hostname string
-	ExecutionMetadata
-}
-
-type Container struct {
-	bkgw.Container
-	id string
-}
-
-var _ Namespaced = (*Container)(nil)
-
-func (ctr *Container) NamespaceID() string {
-	return ctr.id
-}
-
-func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Container, error) {
-	containerID := identity.NewID()
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel(errors.New("new container done"))
-	ctx = withOutgoingContext(ctx)
-	ctrReq := bkcontainer.NewContainerRequest{
-		ContainerID: containerID,
-		Hostname:    req.Hostname,
-		Mounts:      make([]bkcontainer.Mount, len(req.Mounts)),
-	}
-
-	// get the input mounts in parallel in case they need to be evaluated, which can be expensive
-	eg, egctx := errgroup.WithContext(ctx)
-	for i, m := range req.Mounts {
-		eg.Go(func() error {
-			workerRef := m.WorkerRef
-			if workerRef == nil && m.Ref != nil {
-				ref, ok := m.Ref.(*ref)
-				if !ok {
-					return fmt.Errorf("dagger: unexpected ref type: %T", m.Ref)
-				}
-				if ref != nil { // TODO(vito): apparently this is possible. scratch?
-					res, err := ref.resultProxy.Result(egctx)
-					if err != nil {
-						return fmt.Errorf("result: %w", err)
-					}
-					workerRef, ok = res.Sys().(*bkworker.WorkerRef)
-					if !ok {
-						return fmt.Errorf("invalid res: %T", res.Sys())
-					}
-				}
-			}
-			ctrReq.Mounts[i] = bkcontainer.Mount{
-				WorkerRef: workerRef,
-				Mount: &bksolverpb.Mount{
-					Dest:      m.Dest,
-					Selector:  m.Selector,
-					Readonly:  m.Readonly,
-					MountType: m.MountType,
-					CacheOpt:  m.CacheOpt,
-					SecretOpt: m.SecretOpt,
-					SSHOpt:    m.SSHOpt,
-					ResultID:  m.ResultID,
-				},
-			}
-			return nil
-		})
-	}
-	err = eg.Wait()
-	if err != nil {
-		return nil, fmt.Errorf("wait: %w", err)
-	}
-
-	// using context.Background so it continues running until exit or when c.Close() is called
-	ctr, err := bkcontainer.NewContainer(
-		context.WithoutCancel(ctx),
-		c.Worker.CacheManager(),
-		c.Worker.ExecWorker(
-			trace.SpanContextFromContext(ctx),
-			req.ExecutionMetadata,
-		), // also implements Executor
-		c.SessionManager,
-		bksession.NewGroup(c.ID()),
-		ctrReq,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	c.ContainersMu.Lock()
-	defer c.ContainersMu.Unlock()
-	if c.Containers == nil {
-		if err := ctr.Release(context.WithoutCancel(ctx)); err != nil {
-			return nil, fmt.Errorf("release after close: %w", err)
-		}
-		return nil, errors.New("client closed")
-	}
-	c.Containers[ctr] = struct{}{}
-
-	return &Container{
-		Container: ctr,
-		id:        containerID,
-	}, nil
 }
 
 func (c *Client) NewNetworkNamespace(ctx context.Context, hostname string) (Namespaced, error) {
@@ -894,10 +780,10 @@ func (c *Client) OpenPipe(
 	return &pipe.PipeIO{GRPC: pipeIOClient}, nil
 }
 
-func (c *Client) LoadImage(
+func (c *Client) WriteImage(
 	ctx context.Context,
 	name string,
-) (*Loader, error) {
+) (*ImageWriter, error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -908,7 +794,7 @@ func (c *Client) LoadImage(
 	}
 
 	if callerSupports(caller, &contentapi.Content_ServiceDesc) {
-		return &Loader{
+		return &ImageWriter{
 			ContentStore: contentproxy.NewContentStore(contentapi.NewContentClient(caller.Conn())),
 			ImagesStore:  containerd.NewImageStoreFromClient(imagesapi.NewImagesClient(caller.Conn())),
 			LeaseManager: leasesproxy.NewLeaseManager(leasesapi.NewLeasesClient(caller.Conn())),
@@ -917,13 +803,58 @@ func (c *Client) LoadImage(
 
 	if callerSupports(caller, &store.BasicStore_serviceDesc) {
 		loadClient := store.NewBasicStoreClient(caller.Conn())
-		ctx = metadata.AppendToOutgoingContext(ctx, store.ImageLoadTag, name)
-		tarballLoader, err := loadClient.LoadTarball(ctx)
+		ctx = metadata.AppendToOutgoingContext(ctx, store.ImageTagKey, name)
+		tarballWriter, err := loadClient.LoadTarball(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open tarball pipe: %w", err)
 		}
-		return &Loader{
-			Tarball: &store.TarballWriter{GRPC: tarballLoader},
+		return &ImageWriter{
+			Tarball: &store.TarballWriter{
+				SendF: tarballWriter.Send,
+				CloseF: func() error {
+					_, err := tarballWriter.CloseAndRecv()
+					return err
+				},
+			},
+		}, nil
+	}
+
+	return nil, fmt.Errorf("client has no supported api for loading image")
+}
+
+func (c *Client) ReadImage(
+	ctx context.Context,
+	name string,
+) (*ImageReader, error) {
+	md, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.GetClientCaller(md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller: %w", err)
+	}
+
+	if callerSupports(caller, &contentapi.Content_ServiceDesc) {
+		return &ImageReader{
+			ContentStore: contentproxy.NewContentStore(contentapi.NewContentClient(caller.Conn())),
+			ImagesStore:  containerd.NewImageStoreFromClient(imagesapi.NewImagesClient(caller.Conn())),
+			LeaseManager: leasesproxy.NewLeaseManager(leasesapi.NewLeasesClient(caller.Conn())),
+		}, nil
+	}
+
+	if callerSupports(caller, &store.BasicStore_serviceDesc) {
+		loadClient := store.NewBasicStoreClient(caller.Conn())
+		ctx = metadata.AppendToOutgoingContext(ctx, store.ImageTagKey, name)
+		tarballReader, err := loadClient.ReadTarball(ctx, &emptypb.Empty{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to open tarball pipe: %w", err)
+		}
+		return &ImageReader{
+			Tarball: &store.TarballReader{
+				ReadF:  tarballReader.Recv,
+				CloseF: tarballReader.CloseSend,
+			},
 		}, nil
 	}
 
@@ -944,8 +875,16 @@ func callerSupports(caller bksession.Caller, desc *grpc.ServiceDesc) bool {
 	return true
 }
 
-type Loader struct {
+type ImageWriter struct {
 	Tarball io.WriteCloser
+
+	ContentStore content.Store
+	ImagesStore  images.Store
+	LeaseManager leases.Manager
+}
+
+type ImageReader struct {
+	Tarball io.ReadCloser
 
 	ContentStore content.Store
 	ImagesStore  images.Store

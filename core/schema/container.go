@@ -73,8 +73,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`Address of the container image to download, in standard OCI ref format. Example:"registry.dagger.io/engine:latest"`,
 				),
 			),
-		// FIXME: deprecate
 		dagql.Func("build", s.build).
+			Deprecated("Use `Directory.build` instead").
 			Doc(`Initializes this container from a Dockerfile build.`).
 			Args(
 				dagql.Arg("context").Doc("Directory context used by the Dockerfile."),
@@ -454,10 +454,12 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					Doc("For true this can be removed. For false, use `useEntrypoint` instead."),
 				dagql.Arg("stdin").Doc(
 					`Content to write to the command's standard input. Example: "Hello world")`),
+				dagql.Arg("redirectStdin").Doc(
+					`Redirect the command's standard input from a file in the container. Example: "./stdin.txt"`),
 				dagql.Arg("redirectStdout").Doc(
 					`Redirect the command's standard output to a file in the container. Example: "./stdout.txt"`),
 				dagql.Arg("redirectStderr").Doc(
-					`Like redirectStdout, but for standard error`),
+					`Redirect the command's standard error to a file in the container. Example: "./stderr.txt"`),
 				dagql.Arg("expect").Doc(`Exit codes this command is allowed to exit with without error`),
 				dagql.Arg("experimentalPrivilegedNesting").Doc(
 					`Provides Dagger access to the executed command.`),
@@ -491,6 +493,10 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("stderr", s.stderrLegacy).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
+
+		dagql.Func("combinedOutput", s.combinedOutput).
+			Doc(`The combined buffered standard output and standard error stream of the last executed command`,
+				`Returns an error if no command was executed`),
 
 		dagql.Func("exitCode", s.exitCode).
 			Doc(`The exit code of the last executed command`,
@@ -957,6 +963,10 @@ func (args containerExecArgs) Digest() (digest.Digest, error) {
 func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExecArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
 	ctr := parent.Self().Clone()
 
+	if args.Stdin != "" && args.RedirectStdin != "" {
+		return inst, fmt.Errorf("cannot set both stdin and redirectStdin")
+	}
+
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get server: %w", err)
@@ -1079,6 +1089,10 @@ func (s *containerSchema) stderrLegacy(ctx context.Context, parent dagql.ObjectR
 		return ctr.Self().Stderr(ctx)
 	}
 	return out, err
+}
+
+func (s *containerSchema) combinedOutput(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+	return parent.CombinedOutput(ctx)
 }
 
 func (s *containerSchema) exitCode(ctx context.Context, parent *core.Container, _ struct{}) (int, error) {
@@ -2124,10 +2138,6 @@ func (s *containerSchema) asTarball(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	svcs, err := query.Services(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get services: %w", err)
-	}
 	engineHostPlatform := query.Platform()
 
 	if args.MediaTypes == "" {
@@ -2196,12 +2206,6 @@ func (s *containerSchema) asTarball(
 		return inst, fmt.Errorf("no buildkit session group found")
 	}
 
-	detach, _, err := svcs.StartBindings(ctx, services)
-	if err != nil {
-		return inst, err
-	}
-	defer detach()
-
 	filePath := args.DagOpPath
 
 	bkref, err := query.BuildkitCache().New(ctx, nil, bkSessionGroup,
@@ -2259,6 +2263,7 @@ func (s *containerSchema) exportImage(
 	if err != nil {
 		return core.Void{}, fmt.Errorf("failed to parse image address %s: %w", args.Name, err)
 	}
+	refName = reference.TagNameOnly(refName)
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -2273,12 +2278,12 @@ func (s *containerSchema) exportImage(
 		return core.Void{}, fmt.Errorf("failed to get server: %w", err)
 	}
 
-	loader, err := bk.LoadImage(ctx, refName.String())
+	imageWriter, err := bk.WriteImage(ctx, refName.String())
 	if err != nil {
 		return core.Void{}, err
 	}
 
-	if loader.ContentStore != nil {
+	if imageWriter.ContentStore != nil {
 		platformVariants, err := dagql.LoadIDs(ctx, srv, args.PlatformVariants)
 		if err != nil {
 			return core.Void{}, err
@@ -2286,7 +2291,7 @@ func (s *containerSchema) exportImage(
 
 		// create and use a lease to write to our content store, prevents
 		// content being cleaned up while we're writing
-		leaseCtx, leaseDone, err := leaseutil.WithLease(ctx, loader.LeaseManager, leaseutil.MakeTemporary)
+		leaseCtx, leaseDone, err := leaseutil.WithLease(ctx, imageWriter.LeaseManager, leaseutil.MakeTemporary)
 		if err != nil {
 			return core.Void{}, err
 		}
@@ -2305,8 +2310,8 @@ func (s *containerSchema) exportImage(
 		}
 
 		// update the written content with gc labels (buildkit doesn't write them itself)
-		handler := images.ChildrenHandler(loader.ContentStore)
-		handler = images.SetChildrenMappedLabels(loader.ContentStore, handler, images.ChildGCLabels)
+		handler := images.ChildrenHandler(imageWriter.ContentStore)
+		handler = images.SetChildrenMappedLabels(imageWriter.ContentStore, handler, images.ChildGCLabels)
 		if err := images.WalkNotEmpty(ctx, handler, *desc); err != nil {
 			return core.Void{}, err
 		}
@@ -2316,19 +2321,19 @@ func (s *containerSchema) exportImage(
 			Name:   refName.String(),
 			Target: *desc,
 		}
-		if _, err := loader.ImagesStore.Update(ctx, img); err != nil {
+		if _, err := imageWriter.ImagesStore.Update(ctx, img); err != nil {
 			if !errors.Is(err, cerrdefs.ErrNotFound) {
 				return core.Void{}, err
 			}
 
-			if _, err = loader.ImagesStore.Create(ctx, img); err != nil {
+			if _, err = imageWriter.ImagesStore.Create(ctx, img); err != nil {
 				return core.Void{}, err
 			}
 		}
 		return core.Void{}, nil
 	}
 
-	if dest := loader.Tarball; dest != nil {
+	if dest := imageWriter.Tarball; dest != nil {
 		defer func() {
 			// close dest if it wasn't already closed and set to nil
 			if dest != nil {
@@ -2408,11 +2413,14 @@ func (s *containerSchema) import_(ctx context.Context, parent *core.Container, a
 	if err != nil {
 		return nil, err
 	}
-	return parent.Import(
-		ctx,
-		source.Self(),
-		args.Tag,
-	)
+
+	r, err := source.Self().Open(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	return parent.Import(ctx, r, args.Tag)
 }
 
 type containerWithRegistryAuthArgs struct {
@@ -2536,23 +2544,11 @@ func (s *containerSchema) exposedPorts(ctx context.Context, parent *core.Contain
 	for ociPort := range parent.Config.ExposedPorts {
 		p, exists := ports[ociPort]
 		if !exists {
-			// ignore errors when parsing from OCI
-			port, protoStr, ok := strings.Cut(ociPort, "/")
-			if !ok {
-				continue
-			}
-			portNr, err := strconv.Atoi(port)
+			var err error
+			p, err = core.NewPortFromOCI(ociPort)
 			if err != nil {
+				// ignore errors when parsing from OCI
 				continue
-			}
-			proto, err := core.NetworkProtocols.Lookup(strings.ToUpper(protoStr))
-			if err != nil {
-				// FIXME(vito): should this and above return nil, err instead?
-				continue
-			}
-			p = core.Port{
-				Port:     portNr,
-				Protocol: proto,
 			}
 		}
 		exposedPorts = append(exposedPorts, p)
